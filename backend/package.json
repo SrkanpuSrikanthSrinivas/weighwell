@@ -1,0 +1,13 @@
+{
+  "name": "weighwell-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Photo recognition endpoint for the WeighWell app (Vercel serverless function).",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

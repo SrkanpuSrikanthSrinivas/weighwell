@@ -1,0 +1,104 @@
+# Codemagic cloud builds for WeighWell.
+# Guide: docs/CODEMAGIC.md
+#
+#  android-test     → installable APK for any Android phone (no store account needed)
+#  ios-testflight   → iPhone build uploaded to TestFlight (needs Apple Developer Program)
+
+definitions:
+  env: &env
+    flutter: stable
+    xcode: latest
+    cocoapods: default
+    # To turn on photo recognition: in Codemagic create an environment group
+    # named "weighwell" with RECOGNIZE_URL, then remove the # on the next two lines.
+    # groups:
+    #   - weighwell
+
+  scripts:
+    - &setup
+      name: Create platform folders and permissions (first time only)
+      script: |
+        if [ ! -d ios ] || [ ! -d android ] || [ ! -d web ]; then
+          chmod +x tool/setup.sh
+          ./tool/setup.sh
+        else
+          flutter pub get
+        fi
+    - &analyze
+      name: Check the code
+      script: flutter analyze --no-fatal-infos --no-fatal-warnings
+    - &test
+      name: Run unit tests
+      script: flutter test
+
+  email: &email
+    email:
+      recipients:
+        - srkanpu@gmail.com # <-- change to your email; the build link arrives here
+      notify:
+        success: true
+        failure: true
+
+workflows:
+  android-test:
+    name: Android test build (APK)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      <<: *env
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+    scripts:
+      - *setup
+      - *analyze
+      - *test
+      - name: Build APK
+        script: |
+          flutter build apk --release \
+            --build-name=0.1.$BUILD_NUMBER \
+            --build-number=$BUILD_NUMBER \
+            --dart-define=RECOGNIZE_URL=${RECOGNIZE_URL:-}
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
+    publishing:
+      <<: *email
+
+  ios-testflight:
+    name: iPhone build to TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    integrations:
+      app_store_connect: Codemagic # <-- the name you gave the API key in Codemagic
+    environment:
+      <<: *env
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.aiqeacademy.weighwell
+      vars:
+        APP_STORE_APPLE_ID: "0000000000" # <-- your app's Apple ID from App Store Connect
+    scripts:
+      - *setup
+      - *analyze
+      - *test
+      - name: Use signing profiles
+        script: |
+          xcode-project use-profiles --custom-export-options='{"testFlightInternalTestingOnly": true}'
+      - name: Build IPA
+        script: |
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" || echo 0)
+          flutter build ipa --release \
+            --build-name=0.1.0 \
+            --build-number=$((LATEST + 1)) \
+            --dart-define=RECOGNIZE_URL=${RECOGNIZE_URL:-} \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      <<: *email
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false # internal testers get it without Apple review
