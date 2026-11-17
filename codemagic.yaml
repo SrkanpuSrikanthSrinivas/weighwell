@@ -9,6 +9,7 @@ definitions:
     flutter: stable
     xcode: latest
     cocoapods: default
+    java: 21
     # To turn on photo recognition: in Codemagic create an environment group
     # named "weighwell" with RECOGNIZE_URL, then remove the # on the next two lines.
     # groups:
