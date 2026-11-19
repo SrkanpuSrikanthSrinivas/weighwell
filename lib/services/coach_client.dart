@@ -5,7 +5,8 @@ import 'package:http/http.dart' as http;
 import '../data/exercise_catalog.dart';
 import '../models/fitness.dart';
 import '../models/models.dart';
-import 'food_lookup.dart';
+import '../config.dart';
+import 'auth_token.dart';
 
 class CoachInsights {
   const CoachInsights({
@@ -41,29 +42,19 @@ class CoachPlan {
   final String notes;
 }
 
-/// Talks to backend/api/coach.js.
-///
-/// Uses --dart-define=API_BASE=https://your-app.vercel.app/api
-/// (or works it out from RECOGNIZE_URL if only that is set).
+/// Talks to backend/api/coach.js (address from lib/config.dart).
 class CoachClient {
   CoachClient({http.Client? client}) : _client = client ?? http.Client();
   final http.Client _client;
 
-  static const _apiBase = String.fromEnvironment('API_BASE');
+  static String get base => AppConfig.api;
 
-  static String get base {
-    if (_apiBase.isNotEmpty) return _apiBase.replaceAll(RegExp(r'/+$'), '');
-    const r = PhotoRecognizer.endpoint;
-    if (r.isNotEmpty) return r.replaceAll(RegExp(r'/recognize/?$'), '');
-    return '';
-  }
-
-  bool get isConfigured => base.isNotEmpty;
+  bool get isConfigured => AppConfig.hasApi;
 
   Future<Map<String, dynamic>> _post(Map<String, dynamic> body) async {
     if (!isConfigured) throw StateError('AI coach is not set up in this build.');
     final res = await _client
-        .post(Uri.parse('$base/coach'), headers: {'Content-Type': 'application/json'}, body: jsonEncode(body))
+        .post(Uri.parse('$base/coach'), headers: apiHeaders(), body: jsonEncode(body))
         .timeout(const Duration(seconds: 60));
     if (res.statusCode != 200) throw Exception('Coach error ${res.statusCode}');
     return jsonDecode(res.body) as Map<String, dynamic>;

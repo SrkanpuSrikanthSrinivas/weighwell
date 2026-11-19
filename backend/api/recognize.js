@@ -1,3 +1,4 @@
+import { cors, requireUser } from './_auth.js';
 // Photo → food recognition for WeighWell.
 // Deploy this folder to Vercel. Set ANTHROPIC_API_KEY in the Vercel project
 // settings. The app sends { image: <base64>, mimeType } and gets back
@@ -16,11 +17,6 @@ Reply with ONLY JSON, no prose, in exactly this shape:
 {"foods":[{"name":"Banana","confidence":0.9,"kcalPer100":89,"proteinPer100":1.1,"carbsPer100":22.8,"fatPer100":0.3,"estimatedGrams":118}]}
 Use short, plain food names that anyone understands.`;
 
-function cors(res) {
-  res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGIN || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-}
 
 export function parseFoods(text) {
   const start = text.indexOf('{');
@@ -51,6 +47,7 @@ export default async function handler(req, res) {
   cors(res);
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST' });
+  if (!(await requireUser(req, res))) return;
 
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return res.status(500).json({ error: 'Server is missing ANTHROPIC_API_KEY' });

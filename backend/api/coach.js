@@ -1,3 +1,4 @@
+import { cors, requireUser } from './_auth.js';
 // AI coach for WeighWell: weekly health insights and workout plan drafts.
 // POST { task: "insights", summary: {...} }
 //   → { headline, score, goingWell[], tryNext[], watchOut[] }
@@ -30,11 +31,6 @@ Days are numbered 1 = Monday … 7 = Sunday.
 Reply with ONLY JSON in exactly this shape:
 {"days":{"1":[{"name":"Brisk walking (6.5 km/h)","sets":1,"reps":0,"weightKg":null,"minutes":10}],"2":[]},"notes":"one or two sentences"}`;
 
-function cors(res) {
-  res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGIN || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-}
 
 function extractJson(text) {
   const start = text.indexOf('{');
@@ -115,6 +111,7 @@ export default async function handler(req, res) {
   cors(res);
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST' });
+  if (!(await requireUser(req, res))) return;
 
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return res.status(500).json({ error: 'Server is missing ANTHROPIC_API_KEY' });

@@ -177,6 +177,43 @@ PY
   fi
 done
 
+# Sign-in links (Google / email) open the app via
+# com.aiqeacademy.weighwell://login-callback/
+if [ -f "$MANIFEST" ]; then
+  python3 - "$MANIFEST" <<'PY'
+import sys
+path = sys.argv[1]
+xml = open(path).read()
+if 'android:scheme="com.aiqeacademy.weighwell"' not in xml:
+    link = (
+        '            <intent-filter>\n'
+        '                <action android:name="android.intent.action.VIEW"/>\n'
+        '                <category android:name="android.intent.category.DEFAULT"/>\n'
+        '                <category android:name="android.intent.category.BROWSABLE"/>\n'
+        '                <data android:scheme="com.aiqeacademy.weighwell" android:host="login-callback"/>\n'
+        '            </intent-filter>\n'
+    )
+    i = xml.find("</activity>")
+    xml = xml[:i] + link + "        " + xml[i:]
+    open(path, "w").write(xml)
+PY
+fi
+if [ -f ios/Runner/Info.plist ]; then
+  python3 - ios/Runner/Info.plist <<'PY'
+import plistlib, sys
+path = sys.argv[1]
+with open(path, "rb") as f:
+    plist = plistlib.load(f)
+scheme = "com.aiqeacademy.weighwell"
+types = plist.get("CFBundleURLTypes", [])
+if not any(scheme in t.get("CFBundleURLSchemes", []) for t in types):
+    types.append({"CFBundleTypeRole": "Editor", "CFBundleURLName": "login", "CFBundleURLSchemes": [scheme]})
+    plist["CFBundleURLTypes"] = types
+    with open(path, "wb") as f:
+        plistlib.dump(plist, f)
+PY
+fi
+
 # Skip the release "lint vital" check: it can crash on plugin code and
 # is not needed to produce a working APK.
 for GRADLE in android/app/build.gradle.kts android/app/build.gradle; do

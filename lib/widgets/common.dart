@@ -16,8 +16,8 @@ class AppCard extends StatelessWidget {
         padding: padding,
         decoration: BoxDecoration(
           color: color ?? AppColors.card,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: const [BoxShadow(color: Color(0x0F000000), blurRadius: 3, offset: Offset(0, 1))],
+          borderRadius: BorderRadius.circular(20),
+          border: color == null ? Border.all(color: AppColors.line) : null,
         ),
         child: child,
       );
@@ -287,6 +287,29 @@ class MealIcon extends StatelessWidget {
       child: Icon(icon, color: fg, size: 24),
     );
   }
+}
+
+/// Section title used across screens, with an optional action on the right.
+class SectionHeader extends StatelessWidget {
+  const SectionHeader(this.title, {super.key, this.action, this.onAction});
+  final String title;
+  final String? action;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 18, 4, 10),
+        child: Row(
+          children: [
+            Expanded(child: Text(title, style: const TextStyle(fontSize: 20, fontWeight: w800))),
+            if (action != null)
+              TextButton(
+                onPressed: onAction,
+                child: Text(action!, style: const TextStyle(fontSize: 15, fontWeight: w800)),
+              ),
+          ],
+        ),
+      );
 }
 
 void showMessage(BuildContext context, String text) {

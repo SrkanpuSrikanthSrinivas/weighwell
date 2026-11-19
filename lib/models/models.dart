@@ -196,6 +196,8 @@ class Profile {
     this.goal = Goal.stay,
     this.textScale = 1.0,
     this.useKg = true,
+    this.stepGoal = 8000,
+    this.waterGoal = 8,
   });
 
   final int age;
@@ -209,6 +211,12 @@ class Profile {
   final double textScale;
   final bool useKg;
 
+  /// Daily step target (8,000 is a good everyday goal for most adults).
+  final int stepGoal;
+
+  /// Glasses of water per day.
+  final int waterGoal;
+
   Profile copyWith({
     int? age,
     double? weightKg,
@@ -218,6 +226,8 @@ class Profile {
     Goal? goal,
     double? textScale,
     bool? useKg,
+    int? stepGoal,
+    int? waterGoal,
   }) =>
       Profile(
         age: age ?? this.age,
@@ -228,6 +238,8 @@ class Profile {
         goal: goal ?? this.goal,
         textScale: textScale ?? this.textScale,
         useKg: useKg ?? this.useKg,
+        stepGoal: stepGoal ?? this.stepGoal,
+        waterGoal: waterGoal ?? this.waterGoal,
       );
 
   Map<String, dynamic> toJson() => {
@@ -239,6 +251,8 @@ class Profile {
         'goal': goal.name,
         'textScale': textScale,
         'useKg': useKg,
+        'stepGoal': stepGoal,
+        'waterGoal': waterGoal,
       };
 
   factory Profile.fromJson(Map<String, dynamic> j) => Profile(
@@ -253,6 +267,8 @@ class Profile {
             orElse: () => Goal.stay),
         textScale: (j['textScale'] as num? ?? 1.0).toDouble(),
         useKg: j['useKg'] as bool? ?? true,
+        stepGoal: (j['stepGoal'] as num? ?? 8000).toInt(),
+        waterGoal: (j['waterGoal'] as num? ?? 8).toInt(),
       );
 }
 

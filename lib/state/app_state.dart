@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -5,10 +6,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/fitness.dart';
 import '../models/models.dart';
+import '../services/cloud_sync.dart';
 import '../services/energy.dart';
 import '../services/nutrition.dart';
 
-/// All app data, saved on the device (phone storage or browser storage).
+enum SyncStatus { off, syncing, synced, offline }
+
+/// All app data. Saved on the device (phone or browser storage) and, when
+/// signed in, copied to the cloud so it is safe and shared across devices.
 class AppState extends ChangeNotifier {
   static const _kProfile = 'profile';
   static const _kLog = 'log';
@@ -17,6 +22,8 @@ class AppState extends ChangeNotifier {
   static const _kWorkouts = 'workouts';
   static const _kPlan = 'weekly_plan';
   static const _kCheckIns = 'check_ins';
+  static const _kQueue = 'sync_queue';
+  static const _kOwner = 'data_owner';
 
   SharedPreferences? _prefs;
 
@@ -28,6 +35,17 @@ class AppState extends ChangeNotifier {
   final List<WorkoutEntry> _workouts = [];
   WeeklyPlan _plan = WeeklyPlan();
   final Map<String, DayCheckIn> _checkIns = {};
+
+  // Cloud sync
+  CloudBackend? _cloud;
+  final Map<String, CloudRecord> _queue = {};
+  Timer? _flushTimer;
+  SyncStatus _syncStatus = SyncStatus.off;
+  DateTime? _lastSynced;
+
+  SyncStatus get syncStatus => _syncStatus;
+  DateTime? get lastSynced => _lastSynced;
+  int get pendingChanges => _queue.length;
 
   Profile get profile => _profile;
   bool get setupDone => _setupDone;
@@ -76,6 +94,13 @@ class AppState extends ChangeNotifier {
             .map((e) => DayCheckIn.fromJson(e as Map<String, dynamic>))
             .map((c) => MapEntry(c.day, c)));
     }
+    final queueJson = p.getString(_kQueue);
+    if (queueJson != null) {
+      for (final e in jsonDecode(queueJson) as List) {
+        final r = CloudRecord.fromJson(e as Map<String, dynamic>);
+        _queue[r.key] = r;
+      }
+    }
     _loaded = true;
     notifyListeners();
   }
@@ -90,13 +115,174 @@ class AppState extends ChangeNotifier {
     await p.setString(_kWorkouts, jsonEncode(_workouts.map((e) => e.toJson()).toList()));
     await p.setString(_kPlan, jsonEncode(_plan.toJson()));
     await p.setString(_kCheckIns, jsonEncode(_checkIns.values.map((e) => e.toJson()).toList()));
+    await p.setString(_kQueue, jsonEncode(_queue.values.map((e) => e.toJson()).toList()));
   }
 
   void updateProfile(Profile p, {bool finishSetup = false}) {
     _profile = p;
     if (finishSetup) _setupDone = true;
+    _record(_profileRecord());
     notifyListeners();
     _save();
+  }
+
+  // ------------------------------------------------------------ Cloud
+
+  CloudRecord _profileRecord() =>
+      CloudRecord(kind: 'profile', id: 'me', data: {..._profile.toJson(), 'setupDone': _setupDone});
+  CloudRecord _planRecord() => CloudRecord(kind: 'plan', id: 'me', data: _plan.toJson());
+  CloudRecord _myFoodsRecord() =>
+      CloudRecord(kind: 'myfoods', id: 'me', data: {'items': _myFoods.map((f) => f.toJson()).toList()});
+
+  List<CloudRecord> _allLocalRecords() => [
+        if (_setupDone) _profileRecord(),
+        if (!_plan.isEmpty) _planRecord(),
+        if (_myFoods.isNotEmpty) _myFoodsRecord(),
+        for (final e in _log) CloudRecord(kind: 'food', id: e.id, data: e.toJson()),
+        for (final w in _workouts) CloudRecord(kind: 'workout', id: w.id, data: w.toJson()),
+        for (final c in _checkIns.values) CloudRecord(kind: 'checkin', id: c.day, data: c.toJson()),
+      ];
+
+  /// Remember a change so it is uploaded (now if online, later if not).
+  void _record(CloudRecord r) {
+    if (_cloud == null && _prefs?.getString(_kOwner) == null) return; // never signed in
+    _queue[r.key] = r;
+    _scheduleFlush();
+  }
+
+  void _recordDelete(String kind, String id) =>
+      _record(CloudRecord(kind: kind, id: id, deleted: true));
+
+  void _scheduleFlush() {
+    _flushTimer?.cancel();
+    _flushTimer = Timer(const Duration(milliseconds: 1500), flush);
+  }
+
+  /// Upload waiting changes. Safe to call any time.
+  Future<void> flush() async {
+    final cloud = _cloud;
+    if (cloud == null || cloud.userId == null || _queue.isEmpty) return;
+    final batch = _queue.values.toList();
+    _setStatus(SyncStatus.syncing);
+    try {
+      await cloud.upsert(batch);
+      for (final r in batch) {
+        // Only clear if not changed again while uploading.
+        if (identical(_queue[r.key], r)) _queue.remove(r.key);
+      }
+      _lastSynced = DateTime.now();
+      _setStatus(_queue.isEmpty ? SyncStatus.synced : SyncStatus.syncing);
+      await _save();
+      if (_queue.isNotEmpty) _scheduleFlush();
+    } catch (e) {
+      debugPrint('Sync upload failed: $e');
+      _setStatus(SyncStatus.offline);
+      _flushTimer?.cancel();
+      _flushTimer = Timer(const Duration(seconds: 30), flush);
+    }
+  }
+
+  void _setStatus(SyncStatus s) {
+    if (_syncStatus == s) return;
+    _syncStatus = s;
+    notifyListeners();
+  }
+
+  /// Called after sign-in. Brings this device and the cloud in line.
+  Future<void> attachCloud(CloudBackend cloud) async {
+    final uid = cloud.userId;
+    if (uid == null) return;
+    _cloud = cloud;
+    final owner = _prefs?.getString(_kOwner);
+    if (owner != null && owner != uid) {
+      // Someone else used this device before: start clean.
+      _clearLocal();
+    }
+    await _prefs?.setString(_kOwner, uid);
+    _setStatus(SyncStatus.syncing);
+    try {
+      await flush();
+      final cloudRecords = await cloud.fetchAll();
+      final local = _allLocalRecords();
+      final merged = mergeRecords(local: local, cloud: cloudRecords);
+      _applyRecords(merged.records.values);
+      if (merged.toUpload.isNotEmpty) {
+        for (final r in merged.toUpload) {
+          _queue[r.key] = r;
+        }
+      }
+      await _save();
+      notifyListeners();
+      await flush();
+      _lastSynced = DateTime.now();
+      _setStatus(_queue.isEmpty ? SyncStatus.synced : SyncStatus.offline);
+    } catch (e) {
+      debugPrint('Sync download failed: $e');
+      _setStatus(SyncStatus.offline);
+    }
+  }
+
+  void _applyRecords(Iterable<CloudRecord> records) {
+    _log.clear();
+    _workouts.clear();
+    _checkIns.clear();
+    for (final r in records) {
+      try {
+        switch (r.kind) {
+          case 'profile':
+            _profile = Profile.fromJson(r.data);
+            _setupDone = r.data['setupDone'] as bool? ?? true;
+          case 'plan':
+            _plan = WeeklyPlan.fromJson(r.data);
+          case 'myfoods':
+            _myFoods
+              ..clear()
+              ..addAll(((r.data['items'] as List?) ?? const [])
+                  .whereType<Map<String, dynamic>>()
+                  .map(Food.fromJson));
+          case 'food':
+            _log.add(LogEntry.fromJson(r.data));
+          case 'workout':
+            _workouts.add(WorkoutEntry.fromJson(r.data));
+          case 'checkin':
+            final c = DayCheckIn.fromJson(r.data);
+            _checkIns[c.day] = c;
+        }
+      } catch (e) {
+        debugPrint('Skipped bad record ${r.key}: $e');
+      }
+    }
+  }
+
+  void _clearLocal() {
+    _log.clear();
+    _workouts.clear();
+    _checkIns.clear();
+    _myFoods.clear();
+    _plan = WeeklyPlan();
+    _profile = const Profile();
+    _setupDone = false;
+    _queue.clear();
+  }
+
+  /// Sign-out: upload what is left, then wipe this device.
+  Future<void> detachCloud() async {
+    await flush();
+    _flushTimer?.cancel();
+    _cloud = null;
+    _clearLocal();
+    await _prefs?.remove(_kOwner);
+    await _save();
+    _setStatus(SyncStatus.off);
+    notifyListeners();
+  }
+
+  /// Permanently delete this person's cloud data and local data.
+  Future<void> deleteCloudData() async {
+    final cloud = _cloud;
+    if (cloud != null) await cloud.deleteEverything();
+    _queue.clear();
+    await detachCloud();
   }
 
   void addEntry({
@@ -115,11 +301,13 @@ class AppState extends ChangeNotifier {
       time: now,
       fromScale: fromScale,
     ));
+    _record(CloudRecord(kind: 'food', id: _log.last.id, data: _log.last.toJson()));
     // Remember packaged and photo foods so they are quick to find next time.
     if (food.source != FoodSource.builtIn &&
         !_myFoods.any((f) => f.name.toLowerCase() == food.name.toLowerCase())) {
       _myFoods.insert(0, food);
       if (_myFoods.length > 100) _myFoods.removeLast();
+      _record(_myFoodsRecord());
     }
     notifyListeners();
     _save();
@@ -127,6 +315,7 @@ class AppState extends ChangeNotifier {
 
   void removeEntry(String id) {
     _log.removeWhere((e) => e.id == id);
+    _recordDelete('food', id);
     notifyListeners();
     _save();
   }
@@ -162,6 +351,7 @@ class AppState extends ChangeNotifier {
 
   void savePlan(WeeklyPlan plan) {
     _plan = plan;
+    _record(_planRecord());
     notifyListeners();
     _save();
   }
@@ -180,12 +370,14 @@ class AppState extends ChangeNotifier {
 
   void addWorkout(WorkoutEntry w) {
     _workouts.add(w);
+    _record(CloudRecord(kind: 'workout', id: w.id, data: w.toJson()));
     notifyListeners();
     _save();
   }
 
   void removeWorkout(String id) {
     _workouts.removeWhere((w) => w.id == id);
+    _recordDelete('workout', id);
     notifyListeners();
     _save();
   }
@@ -200,11 +392,18 @@ class AppState extends ChangeNotifier {
   void saveCheckIn(DayCheckIn c) {
     _checkIns[c.day] = c;
     // A new weigh-in today also updates the profile so targets follow.
-    if (c.bodyWeightKg != null && c.day == dayKey(DateTime.now())) {
+    _record(CloudRecord(kind: 'checkin', id: c.day, data: c.toJson()));
+    if (c.bodyWeightKg != null && c.day == dayKey(DateTime.now()) && c.bodyWeightKg != _profile.weightKg) {
       _profile = _profile.copyWith(weightKg: c.bodyWeightKg);
+      _record(_profileRecord());
     }
     notifyListeners();
     _save();
+  }
+
+  void addWater(DateTime day, int delta) {
+    final c = checkInOn(day);
+    saveCheckIn(c.copyWith(water: (c.water + delta).clamp(0, 30).toInt()));
   }
 
   /// Merge numbers synced from Apple Health / Health Connect.

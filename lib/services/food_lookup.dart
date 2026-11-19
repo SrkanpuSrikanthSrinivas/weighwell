@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../config.dart';
 import '../models/models.dart';
+import 'auth_token.dart';
 
 /// Packaged-food lookups from Open Food Facts (free, no API key).
 /// https://world.openfoodfacts.org/data
@@ -101,15 +103,14 @@ class FoodGuess {
 /// which asks a vision AI model what the food is. The API key stays on the
 /// server — never put it in the app.
 ///
-/// Set the URL at build time:
-///   flutter run --dart-define=RECOGNIZE_URL=https://your-app.vercel.app/api/recognize
+/// The server address comes from lib/config.dart (AppConfig.apiBase).
 class PhotoRecognizer {
   PhotoRecognizer({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
-  static const endpoint = String.fromEnvironment('RECOGNIZE_URL');
+  static String get endpoint => '${AppConfig.api}/recognize';
 
-  bool get isConfigured => endpoint.isNotEmpty;
+  bool get isConfigured => AppConfig.hasApi;
 
   Future<List<FoodGuess>> recognize(Uint8List jpegBytes, {String mimeType = 'image/jpeg'}) async {
     if (!isConfigured) {
@@ -118,10 +119,11 @@ class PhotoRecognizer {
     final res = await _client
         .post(
           Uri.parse(endpoint),
-          headers: {'Content-Type': 'application/json'},
+          headers: apiHeaders(),
           body: jsonEncode({'image': base64Encode(jpegBytes), 'mimeType': mimeType}),
         )
         .timeout(const Duration(seconds: 40));
+    if (res.statusCode == 401) throw Exception('Please sign in again.');
     if (res.statusCode != 200) {
       throw Exception('Could not read the photo (${res.statusCode}).');
     }

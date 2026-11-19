@@ -35,6 +35,34 @@ ThemeData buildTheme() {
   );
   return base.copyWith(
     textTheme: text,
+    cardTheme: CardThemeData(
+      color: AppColors.card,
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppColors.line),
+      ),
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: Colors.white,
+      indicatorColor: AppColors.greenSoft,
+      height: 72,
+      labelTextStyle: WidgetStateProperty.resolveWith(
+        (s) => GoogleFonts.nunito(
+          fontSize: 13,
+          fontWeight: s.contains(WidgetState.selected) ? FontWeight.w800 : FontWeight.w700,
+          color: s.contains(WidgetState.selected) ? AppColors.greenDark : AppColors.muted,
+        ),
+      ),
+      iconTheme: WidgetStateProperty.resolveWith(
+        (s) => IconThemeData(
+          size: 26,
+          color: s.contains(WidgetState.selected) ? AppColors.greenDark : AppColors.muted,
+        ),
+      ),
+    ),
+    dividerTheme: const DividerThemeData(color: AppColors.line, space: 1),
     appBarTheme: const AppBarTheme(
       backgroundColor: AppColors.ground,
       foregroundColor: AppColors.ink,

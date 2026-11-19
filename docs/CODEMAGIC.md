@@ -56,13 +56,9 @@ The app reads steps, walking distance, active calories and weight from Apple Hea
 
 Android needs nothing extra. On Android 13 or older, the app asks the user to install Google's free **Health Connect** app the first time.
 
-## Turn on photo recognition and the AI coach in builds
+## Turn on photo recognition, the AI coach and accounts
 
-1. Deploy `backend/` to Vercel (see README).
-2. In Codemagic, go to the app → **Environment variables**. Add `RECOGNIZE_URL` = `https://YOUR-APP.vercel.app/api/recognize` in a group named `weighwell`.
-3. In `codemagic.yaml`, remove the `#` from the two `groups:` lines, then push.
-
-The AI coach (weekly review and "Suggest a plan") uses the same server, at `/api/coach`. The app works out its address from `RECOGNIZE_URL`, so nothing else is needed.
+These are set in `lib/config.dart`, not in Codemagic. See `docs/ACCOUNTS.md`.
 
 ## If a build fails
 

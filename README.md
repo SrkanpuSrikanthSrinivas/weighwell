@@ -15,7 +15,9 @@ One Flutter codebase for **iOS, Android and the web**. Built to be easy for any 
 | **Exercise** | Weekly schedule (Mon–Sun) and log: sets, reps and weight for strength; minutes and distance for cardio. 40 built-in exercises with calorie burn. **Suggest a plan** asks the AI coach for a schedule based on goal, days, home or gym, and level |
 | **Daily check-in** | Body weight, steps (auto from Apple Health / Health Connect, or typed), water, sleep, food habits, notes |
 | **Progress** | Calories in vs. out for today (resting + daily living + walking + exercise), last 7 days, where weight is heading, 30-day weight chart, and **AI health coach** weekly review |
-| **Settings** | Text size (Normal / Large / Extra large), edit goal, delete data |
+| **Today's goals** | Seven clear daily goals with progress: calories, protein, steps, exercise, water, sleep, weigh-in |
+| **Account** | Continue with Google or an email link; data backed up to the cloud and shared between phone and web; sign out; delete account |
+| **Settings** | Text size (Normal / Large / Extra large), step and water goals, edit goal |
 
 On wide screens (the web, tablets) the app switches to a dashboard layout with a side menu.
 
@@ -35,21 +37,11 @@ flutter run                # connected phone or simulator
 
 No Xcode needed: push to GitHub and Codemagic builds an installable Android APK, and an iPhone TestFlight build. Step-by-step: `docs/CODEMAGIC.md`.
 
-## Turn on photo recognition
+## Turn on sign-in, cloud backup, photo recognition and the AI coach
 
-The app asks *your own* small server to identify food photos. That way the AI key never ships inside the app.
+Fill in `lib/config.dart` (Vercel backend address + Supabase project) and push. Step-by-step: **`docs/ACCOUNTS.md`**.
 
-1. Deploy the `backend/` folder to Vercel (`cd backend && npx vercel`).
-2. In Vercel → Project → Settings → Environment Variables, add `ANTHROPIC_API_KEY`.
-3. Build the app with the URL:
-   ```bash
-   flutter run --dart-define=RECOGNIZE_URL=https://YOUR-APP.vercel.app/api/recognize
-   ```
-   Use the same `--dart-define` for `flutter build web`, `flutter build ipa` and `flutter build appbundle`.
-
-Without the URL, the app still works. The Photo tab tells the user to type the food name instead.
-
-Backend tests: `cd backend && npm test`. For the web app, you can also set `ALLOWED_ORIGIN` in Vercel to your site's address to lock down CORS.
+Until then, the app runs on the device only, without login, and Photo and AI coach say they are not switched on.
 
 ## How calories out are worked out
 
@@ -74,7 +66,8 @@ Works with scales that use the standard Bluetooth Weight Scale profile (service 
 
 ```
 lib/
-  main.dart                 app start, providers, text-size setting
+  main.dart                 app start, login gate, providers, text-size setting
+  config.dart               ← fill in: backend URL and Supabase project
   theme.dart                colours and fonts from the design
   models/models.dart        Food, LogEntry, Profile, Meal …
   data/food_database.dart   built-in foods (per 100 g, USDA-based)
@@ -82,6 +75,9 @@ lib/
   models/fitness.dart       weekly plan, workouts, daily check-in
   services/
     nutrition.dart          daily targets (Mifflin–St Jeor) and meal plan
+    goals.dart              the seven daily goals
+    auth_service.dart       Google / email sign-in, sign out, delete account
+    cloud_sync.dart         Supabase records, merge on sign-in
     energy.dart             calories out, walking, exercise burn
     coach_client.dart       AI coach (insights + workout plan)
     health/                 Apple Health / Health Connect (mobile) and web stub
@@ -92,6 +88,8 @@ lib/
   widgets/common.dart       cards, pills, calorie ring
 backend/api/recognize.js    photo → foods (Vercel function)
 backend/api/coach.js        weekly review + workout plan (Vercel function)
+backend/api/delete-account.js  deletes the signed-in user's account
+backend/supabase.sql        database table + row-level security
 test/logic_test.dart        maths, parsing and storage tests
 ```
 

@@ -3,53 +3,66 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/auth_service.dart';
+import '../services/goals.dart';
 import '../services/nutrition.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
-import '../widgets/units.dart';
 import 'checkin_screen.dart';
 import 'settings_screen.dart';
 
 class TodayScreen extends StatelessWidget {
-  const TodayScreen({super.key, required this.onAddFood, required this.wide});
+  const TodayScreen({super.key, required this.onAddFood, required this.onOpenTab, required this.wide});
 
   final Future<void> Function([Meal? meal]) onAddFood;
+  final ValueChanged<int> onOpenTab;
   final bool wide;
+
+  static String _hello() {
+    final h = DateTime.now().hour;
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final auth = context.watch<AuthService>();
     final today = DateTime.now();
     final total = state.totalOn(today);
     final t = state.targets;
+    final name = auth.firstName;
 
     final header = Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(DateFormat('EEEE, MMM d').format(today),
-                  style: const TextStyle(fontSize: 16, color: AppColors.muted, fontWeight: w700)),
-              Text(wide ? _greeting(total.kcal, t.kcal) : 'Today',
-                  style: TextStyle(fontSize: wide ? 30 : 32, fontWeight: w800)),
+              Text(DateFormat('EEEE, MMMM d').format(today),
+                  style: const TextStyle(fontSize: 15, color: AppColors.muted, fontWeight: w700)),
+              Text(name.isEmpty ? _hello() : '${_hello()}, $name',
+                  style: const TextStyle(fontSize: 26, fontWeight: w800)),
             ],
           ),
         ),
+        _SyncDot(status: state.syncStatus),
+        const SizedBox(width: 8),
         IconButton.filledTonal(
-          tooltip: 'My goal and settings',
+          tooltip: 'Account and settings',
           iconSize: 26,
-          style: IconButton.styleFrom(backgroundColor: Colors.white, minimumSize: const Size(50, 50)),
+          style: IconButton.styleFrom(backgroundColor: Colors.white, side: const BorderSide(color: AppColors.line), minimumSize: const Size(50, 50)),
           onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen())),
           icon: const Icon(Icons.person_outline, color: AppColors.ink),
         ),
       ],
     );
 
+    final goals = _GoalsCard(onAddFood: onAddFood, onOpenTab: onOpenTab);
     final summary = _SummaryCard(total: total, targets: t);
-    const activity = _ActivityCard();
     final meals = _MealsList(onAddFood: onAddFood);
 
     if (wide) {
@@ -63,19 +76,26 @@ class TodayScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   header,
-                  const SizedBox(height: 22),
-                  Wrap(
-                    spacing: 18,
-                    runSpacing: 18,
+                  const SizedBox(height: 20),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SizedBox(width: 440, child: summary),
-                      const SizedBox(width: 440, child: activity),
-                      const SizedBox(width: 440, child: _WeekCard()),
+                      Expanded(flex: 6, child: goals),
+                      const SizedBox(width: 20),
+                      Expanded(
+                        flex: 5,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            summary,
+                            const SizedBox(height: 20),
+                            const _WeekCard(),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 22),
-                  const Text('My meals', style: TextStyle(fontSize: 22, fontWeight: w800)),
-                  const SizedBox(height: 10),
+                  const SectionHeader('My meals'),
                   meals,
                 ],
               ),
@@ -87,29 +107,201 @@ class TodayScreen extends StatelessWidget {
 
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 20, 18, 30),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
         children: [
           header,
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
+          goals,
+          const SectionHeader('Calories and protein'),
           summary,
-          const SizedBox(height: 14),
-          activity,
-          const SizedBox(height: 20),
-          const Text('My meals', style: TextStyle(fontSize: 22, fontWeight: w800)),
-          const SizedBox(height: 10),
+          const SectionHeader('My meals'),
           meals,
-          const SizedBox(height: 18),
+          const SectionHeader('This week'),
           const _WeekCard(),
         ],
       ),
     );
   }
+}
 
-  static String _greeting(double eaten, int goal) {
-    final left = goal - eaten;
-    if (eaten == 0) return 'Nothing logged yet today.';
-    if (left >= 0) return 'You have ${fmtInt(left)} kcal left today.';
-    return 'You are ${fmtInt(-left)} kcal over today.';
+class _SyncDot extends StatelessWidget {
+  const _SyncDot({required this.status});
+  final SyncStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    if (status == SyncStatus.off) return const SizedBox.shrink();
+    final (icon, color, text) = switch (status) {
+      SyncStatus.synced => (Icons.cloud_done_outlined, AppColors.green, 'Saved to your account'),
+      SyncStatus.syncing => (Icons.cloud_sync_outlined, AppColors.muted, 'Saving…'),
+      _ => (Icons.cloud_off_outlined, const Color(0xFFB4530B), 'Offline — will save when back online'),
+    };
+    return Tooltip(message: text, child: Icon(icon, color: color, semanticLabel: text));
+  }
+}
+
+class _GoalsCard extends StatelessWidget {
+  const _GoalsCard({required this.onAddFood, required this.onOpenTab});
+  final Future<void> Function([Meal? meal]) onAddFood;
+  final ValueChanged<int> onOpenTab;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final goals = dailyGoals(state, today);
+    final done = goals.where((g) => g.done).length;
+
+    void openCheckIn() =>
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => CheckInScreen(day: today)));
+
+    VoidCallback actionFor(GoalId id) => switch (id) {
+          GoalId.calories || GoalId.protein => () => onAddFood(),
+          GoalId.exercise => () => onOpenTab(1),
+          GoalId.water => () => state.addWater(today, 1),
+          GoalId.steps || GoalId.sleep || GoalId.weighIn => openCheckIn,
+        };
+
+    String actionLabel(GoalId id) => switch (id) {
+          GoalId.calories || GoalId.protein => 'Add food',
+          GoalId.exercise => 'Open',
+          GoalId.water => '+1 glass',
+          GoalId.steps => 'Update',
+          GoalId.sleep || GoalId.weighIn => 'Log',
+        };
+
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 64,
+                height: 64,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      width: 64,
+                      height: 64,
+                      child: CircularProgressIndicator(
+                        value: done / goals.length,
+                        strokeWidth: 7,
+                        backgroundColor: AppColors.greenSoft,
+                        color: AppColors.green,
+                        strokeCap: StrokeCap.round,
+                      ),
+                    ),
+                    Text('$done/${goals.length}', style: const TextStyle(fontSize: 18, fontWeight: w800)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text("Today's goals", style: TextStyle(fontSize: 21, fontWeight: w800)),
+                    Text(
+                      done == goals.length
+                          ? 'Everything done. Great day!'
+                          : done == 0
+                              ? 'Seven simple steps to a healthy day'
+                              : '${goals.length - done} left to complete today',
+                      style: const TextStyle(fontSize: 15, color: AppColors.muted, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (final (i, g) in goals.indexed) ...[
+            if (i > 0) const Divider(height: 1),
+            _GoalRow(goal: g, action: actionLabel(g.id), onAction: actionFor(g.id)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _GoalRow extends StatelessWidget {
+  const _GoalRow({required this.goal, required this.action, required this.onAction});
+  final DailyGoal goal;
+  final String action;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, color, soft) = switch (goal.id) {
+      GoalId.calories => (Icons.local_fire_department_outlined, const Color(0xFFB4530B), const Color(0xFFFFF1E0)),
+      GoalId.protein => (Icons.egg_alt_outlined, AppColors.blue, AppColors.blueSoft),
+      GoalId.steps => (Icons.directions_walk, AppColors.green, AppColors.greenSoft),
+      GoalId.exercise => (Icons.fitness_center, const Color(0xFF6B3FA0), const Color(0xFFF0E8F8)),
+      GoalId.water => (Icons.water_drop_outlined, const Color(0xFF0E7490), const Color(0xFFE0F4F8)),
+      GoalId.sleep => (Icons.bedtime_outlined, const Color(0xFF3B4A8C), const Color(0xFFEEF0F7)),
+      GoalId.weighIn => (Icons.monitor_weight_outlined, AppColors.ink, AppColors.chip),
+    };
+    return Semantics(
+      label: '${goal.title}. ${goal.valueText}. ${goal.done ? 'Done' : goal.statusText}',
+      child: InkWell(
+        onLongPress: () => showMessage(context, goal.why),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(color: goal.done ? AppColors.green : soft, borderRadius: BorderRadius.circular(14)),
+                child: Icon(goal.done ? Icons.check : icon, color: goal.done ? Colors.white : color, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(goal.title, style: const TextStyle(fontSize: 17, fontWeight: w800)),
+                    const SizedBox(height: 2),
+                    Text(
+                      goal.done ? goal.valueText : '${goal.valueText} · ${goal.statusText}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: w700,
+                        color: goal.done ? AppColors.greenDark : AppColors.muted,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    ProgressBar(
+                      value: goal.progress,
+                      color: goal.done ? AppColors.green : color,
+                      background: soft,
+                      height: 6,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              goal.done && goal.id != GoalId.water
+                  ? const SizedBox(width: 8)
+                  : TextButton(
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(64, 44),
+                        backgroundColor: AppColors.ground,
+                        shape: const StadiumBorder(),
+                      ),
+                      onPressed: onAction,
+                      child: Text(action, style: const TextStyle(fontSize: 14, fontWeight: w800)),
+                    ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -164,69 +356,6 @@ class _SummaryCard extends StatelessWidget {
                 ? '${proteinLeft.round()} g more protein to reach your goal'
                 : 'Protein goal reached — well done!',
             style: const TextStyle(fontSize: 15, color: AppColors.muted),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ActivityCard extends StatelessWidget {
-  const _ActivityCard();
-
-  @override
-  Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final e = state.energyOn(today);
-    final checked = state.hasCheckIn(today);
-    final c = state.checkInOn(today);
-
-    Widget stat(IconData icon, String value, String label, Color color) => Expanded(
-          child: Column(
-            children: [
-              Icon(icon, color: color, size: 26),
-              const SizedBox(height: 4),
-              FittedBox(child: Text(value, style: const TextStyle(fontSize: 20, fontWeight: w800))),
-              Text(label, style: const TextStyle(fontSize: 14, color: AppColors.muted, fontWeight: w700)),
-            ],
-          ),
-        );
-
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              const Expanded(child: Text('Activity', style: TextStyle(fontSize: 19, fontWeight: w800))),
-              if (c.bodyWeightKg != null)
-                Text(weightText(c.bodyWeightKg!, state.profile.useKg),
-                    style: const TextStyle(fontSize: 16, fontWeight: w800, color: AppColors.blue)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              stat(Icons.directions_walk, e.steps > 0 ? fmtInt(e.steps) : '—', 'steps', AppColors.green),
-              stat(Icons.place_outlined, e.distanceKm > 0 ? '${e.distanceKm.toStringAsFixed(1)} km' : '—', 'walked', AppColors.green),
-              stat(Icons.local_fire_department_outlined, fmtInt(e.active), 'active kcal', const Color(0xFFB4530B)),
-              stat(Icons.balance, '${e.balance >= 0 ? '+' : '−'}${fmtInt(e.balance.abs())}', 'kcal balance', AppColors.blue),
-            ],
-          ),
-          const SizedBox(height: 12),
-          FilledButton.tonalIcon(
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(52),
-              backgroundColor: AppColors.greenSoft,
-              foregroundColor: AppColors.greenDark,
-              shape: const StadiumBorder(),
-            ),
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CheckInScreen(day: today))),
-            icon: Icon(checked ? Icons.edit_note : Icons.add_task),
-            label: Text(checked ? 'Update today\'s check-in' : 'Daily check-in: weight, water, sleep',
-                style: const TextStyle(fontSize: 16, fontWeight: w800)),
           ),
         ],
       ),
