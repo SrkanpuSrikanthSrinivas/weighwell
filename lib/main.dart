@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 
 import 'screens/home_shell.dart';
 import 'screens/setup_screen.dart';
+import 'services/coach_client.dart';
 import 'services/food_lookup.dart';
+import 'services/health/health_service.dart';
 import 'services/scale/scale_service.dart';
 import 'state/app_state.dart';
 import 'theme.dart';
@@ -22,6 +24,8 @@ Future<void> main() async {
         ),
         Provider(create: (_) => OpenFoodFacts()),
         Provider(create: (_) => PhotoRecognizer()),
+        Provider<HealthService>(create: (_) => createHealthService()),
+        Provider(create: (_) => CoachClient()),
       ],
       child: const WeighWellApp(),
     ),

@@ -7,6 +7,8 @@ import '../services/nutrition.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/units.dart';
+import 'checkin_screen.dart';
 import 'settings_screen.dart';
 
 class TodayScreen extends StatelessWidget {
@@ -47,6 +49,7 @@ class TodayScreen extends StatelessWidget {
     );
 
     final summary = _SummaryCard(total: total, targets: t);
+    const activity = _ActivityCard();
     final meals = _MealsList(onAddFood: onAddFood);
 
     if (wide) {
@@ -66,6 +69,7 @@ class TodayScreen extends StatelessWidget {
                     runSpacing: 18,
                     children: [
                       SizedBox(width: 440, child: summary),
+                      const SizedBox(width: 440, child: activity),
                       const SizedBox(width: 440, child: _WeekCard()),
                     ],
                   ),
@@ -88,6 +92,8 @@ class TodayScreen extends StatelessWidget {
           header,
           const SizedBox(height: 14),
           summary,
+          const SizedBox(height: 14),
+          activity,
           const SizedBox(height: 20),
           const Text('My meals', style: TextStyle(fontSize: 22, fontWeight: w800)),
           const SizedBox(height: 10),
@@ -158,6 +164,69 @@ class _SummaryCard extends StatelessWidget {
                 ? '${proteinLeft.round()} g more protein to reach your goal'
                 : 'Protein goal reached — well done!',
             style: const TextStyle(fontSize: 15, color: AppColors.muted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActivityCard extends StatelessWidget {
+  const _ActivityCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final e = state.energyOn(today);
+    final checked = state.hasCheckIn(today);
+    final c = state.checkInOn(today);
+
+    Widget stat(IconData icon, String value, String label, Color color) => Expanded(
+          child: Column(
+            children: [
+              Icon(icon, color: color, size: 26),
+              const SizedBox(height: 4),
+              FittedBox(child: Text(value, style: const TextStyle(fontSize: 20, fontWeight: w800))),
+              Text(label, style: const TextStyle(fontSize: 14, color: AppColors.muted, fontWeight: w700)),
+            ],
+          ),
+        );
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(child: Text('Activity', style: TextStyle(fontSize: 19, fontWeight: w800))),
+              if (c.bodyWeightKg != null)
+                Text(weightText(c.bodyWeightKg!, state.profile.useKg),
+                    style: const TextStyle(fontSize: 16, fontWeight: w800, color: AppColors.blue)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              stat(Icons.directions_walk, e.steps > 0 ? fmtInt(e.steps) : '—', 'steps', AppColors.green),
+              stat(Icons.place_outlined, e.distanceKm > 0 ? '${e.distanceKm.toStringAsFixed(1)} km' : '—', 'walked', AppColors.green),
+              stat(Icons.local_fire_department_outlined, fmtInt(e.active), 'active kcal', const Color(0xFFB4530B)),
+              stat(Icons.balance, '${e.balance >= 0 ? '+' : '−'}${fmtInt(e.balance.abs())}', 'kcal balance', AppColors.blue),
+            ],
+          ),
+          const SizedBox(height: 12),
+          FilledButton.tonalIcon(
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              backgroundColor: AppColors.greenSoft,
+              foregroundColor: AppColors.greenDark,
+              shape: const StadiumBorder(),
+            ),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => CheckInScreen(day: today))),
+            icon: Icon(checked ? Icons.edit_note : Icons.add_task),
+            label: Text(checked ? 'Update today\'s check-in' : 'Daily check-in: weight, water, sleep',
+                style: const TextStyle(fontSize: 16, fontWeight: w800)),
           ),
         ],
       ),

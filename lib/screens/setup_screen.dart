@@ -18,7 +18,7 @@ class SetupScreen extends StatefulWidget {
 }
 
 class _SetupScreenState extends State<SetupScreen> {
-  late Profile _p = context.read<AppState>().profile;
+  late Profile _p = Provider.of<AppState>(context, listen: false).profile;
 
   static const _lbPerKg = 2.20462;
 

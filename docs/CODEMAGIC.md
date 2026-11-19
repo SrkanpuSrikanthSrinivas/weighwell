@@ -45,11 +45,24 @@ Apple doesn't let cloud services install apps on iPhones with a free account.
 7. **Build.** Run the **iPhone build to TestFlight** workflow.
 8. **Add testers.** In App Store Connect → TestFlight → Internal Testing, add yourself as a tester. Install the **TestFlight** app on your iPhone and accept the invite.
 
-## Turn on photo recognition in builds
+## Apple Health (HealthKit) on iPhone
+
+The app reads steps, walking distance, active calories and weight from Apple Health, so the App Store profile must include HealthKit:
+
+1. developer.apple.com → Certificates, Identifiers & Profiles → **Identifiers** → `com.aiqeacademy.weighwell` → tick **HealthKit** → Save.
+2. **Profiles** → open **WeighWell App Store** → **Edit** → **Save**, or create a new one. Saving regenerates it with HealthKit included.
+3. Codemagic → Team settings → codemagic.yaml settings → Code signing identities → **iOS provisioning profiles**: delete the old WeighWell profile, then **Fetch profiles** and add the new one.
+4. Run **iPhone build to TestFlight** again.
+
+Android needs nothing extra. On Android 13 or older, the app asks the user to install Google's free **Health Connect** app the first time.
+
+## Turn on photo recognition and the AI coach in builds
 
 1. Deploy `backend/` to Vercel (see README).
 2. In Codemagic, go to the app → **Environment variables**. Add `RECOGNIZE_URL` = `https://YOUR-APP.vercel.app/api/recognize` in a group named `weighwell`.
 3. In `codemagic.yaml`, remove the `#` from the two `groups:` lines, then push.
+
+The AI coach (weekly review and "Suggest a plan") uses the same server, at `/api/coach`. The app works out its address from `RECOGNIZE_URL`, so nothing else is needed.
 
 ## If a build fails
 

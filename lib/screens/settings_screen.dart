@@ -16,7 +16,7 @@ class SettingsScreen extends StatelessWidget {
     final state = context.watch<AppState>();
     final p = state.profile;
     final t = state.targets;
-    final photoOn = context.read<PhotoRecognizer>().isConfigured;
+    final photoOn = Provider.of<PhotoRecognizer>(context, listen: false).isConfigured;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings', style: TextStyle(fontWeight: w800))),
